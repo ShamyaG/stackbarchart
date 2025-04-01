@@ -7,6 +7,11 @@ interface DataPoint {
   value: number;
 }
 
+interface QuarterlyTarget {
+  date: string;
+  value: number;
+}
+
 interface StackedBarChartProps {
   width?: number;
   height?: number;
@@ -30,11 +35,12 @@ const StackedBarChart: React.FC<StackedBarChartProps> = ({
     { date: '2024-03', category: 'B', value: 25 },
     { date: '2024-03', category: 'C', value: 25 },
   ]);
-
-  // Function to update data
-  const updateData = (newData: DataPoint[]) => {
-    setData(newData);
-  };
+  
+  const [quarterlyTargets, setQuarterlyTargets] = useState<QuarterlyTarget[]>([
+    { date: '2024-01', value: 50 },
+    { date: '2024-02', value: 60 },
+    { date: '2024-03', value: 70 },
+  ]);
 
   useEffect(() => {
     if (!svgRef.current) return;
@@ -63,6 +69,11 @@ const StackedBarChart: React.FC<StackedBarChartProps> = ({
 
     const stackedData = stack(Array.from(groupedData));
 
+    // Find max value including both data and targets
+    const maxDataValue = d3.max(stackedData[stackedData.length - 1], d => d[1]) || 0;
+    const maxTargetValue = d3.max(quarterlyTargets, d => d.value) || 0;
+    const maxValue = Math.max(maxDataValue, maxTargetValue);
+
     // Scales
     const xScale = d3.scaleBand()
       .domain(Array.from(groupedData.keys()))
@@ -70,7 +81,7 @@ const StackedBarChart: React.FC<StackedBarChartProps> = ({
       .padding(0.1);
 
     const yScale = d3.scaleLinear()
-      .domain([0, d3.max(stackedData[stackedData.length - 1], d => d[1]) || 0])
+      .domain([0, maxValue])
       .range([innerHeight, 0]);
 
     const colorScale = d3.scaleOrdinal<string>()
@@ -84,9 +95,38 @@ const StackedBarChart: React.FC<StackedBarChartProps> = ({
       .attr('class', 'category')
       .attr('fill', d => colorScale(d.key.toString()));
 
+    // Create line generator for target line
+    const targetLine = d3.line<QuarterlyTarget>()
+      .x(d => (xScale(d.date) || 0) + xScale.bandwidth() / 2)
+      .y(d => yScale(d.value));
+
+    // Add target line
+    g.append('path')
+      .datum(quarterlyTargets)
+      .attr('class', 'target-line')
+      .attr('fill', 'none')
+      .attr('stroke', 'red')
+      .attr('stroke-width', 2)
+      .attr('d', targetLine)
+      .style('opacity', 0)
+      .transition()
+      .duration(750)
+      .style('opacity', 1);
+
+    // Add target values as labels
+    g.selectAll('.target-label')
+      .data(quarterlyTargets)
+      .join('text')
+      .attr('class', 'target-label')
+      .attr('x', d => (xScale(d.date) || 0) + xScale.bandwidth() / 2)
+      .attr('y', d => yScale(d.value) - 5)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'red')
+      .text(d => `Target: ${d.value}`);
+
     // Add tooltips with proper typing
     type StackedDatum = d3.SeriesPoint<[string, DataPoint[]]>;
-    
+
     categoryGroups.selectAll('rect')
       .data(d => d)
       .join('rect')
@@ -165,19 +205,44 @@ const StackedBarChart: React.FC<StackedBarChartProps> = ({
       .attr('y', 12)
       .text(d => d);
 
-  }, [data, width, height]);
+  }, [data, width, height, quarterlyTargets]);
 
   return (
     <div>
+      <div style={{ marginBottom: '20px' }}>
+        <h3>Quarterly Targets:</h3>
+        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+          {quarterlyTargets.map((target, index) => (
+            <div key={target.date} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label htmlFor={`target-${index}`}>
+                {target.date}:
+              </label>
+              <input
+                id={`target-${index}`}
+                type="number"
+                value={target.value}
+                onChange={(e) => {
+                  const newTargets = [...quarterlyTargets];
+                  newTargets[index] = {
+                    ...newTargets[index],
+                    value: Number(e.target.value)
+                  };
+                  setQuarterlyTargets(newTargets);
+                }}
+                style={{ padding: '5px', width: '80px' }}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
       <svg ref={svgRef}></svg>
       <div style={{ marginTop: '20px' }}>
         <button onClick={() => {
-          // Example of updating data dynamically
           const newData = data.map(d => ({
             ...d,
             value: Math.floor(Math.random() * 50) + 10
           }));
-          updateData(newData);
+          setData(newData);
         }}>
           Randomize Data
         </button>
